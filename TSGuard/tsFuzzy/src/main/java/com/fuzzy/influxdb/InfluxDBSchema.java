@@ -208,6 +208,9 @@ public class InfluxDBSchema extends AbstractSchema<InfluxDBGlobalState, InfluxDB
                     return "\"0\"";
                 case BOOLEAN:
                     return Randomly.getBoolean();
+                case TIMESTAMP:
+                    return System.currentTimeMillis();
+
                 default:
                     throw new AssertionError(this);
             }

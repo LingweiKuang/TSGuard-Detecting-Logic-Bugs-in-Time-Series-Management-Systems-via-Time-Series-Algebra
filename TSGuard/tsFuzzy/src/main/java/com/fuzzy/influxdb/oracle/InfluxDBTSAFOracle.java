@@ -42,7 +42,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class InfluxDBTSAFOracle
+public abstract class InfluxDBTSAFOracle
         extends TimeSeriesAlgebraFrameworkBase<InfluxDBGlobalState, InfluxDBRowValue, InfluxDBExpression, SQLConnection> {
 
     // TODO 插入数据空间概率分布
@@ -93,6 +93,8 @@ public class InfluxDBTSAFOracle
 
         return new SQLQueryAdapter(InfluxDBVisitor.asString(selectStatement), errors);
     }
+
+
 
     @Override
     protected void setSequenceRegenerateProbabilityToMax(String sequence) {
@@ -145,7 +147,7 @@ public class InfluxDBTSAFOracle
                 return verifyTimeWindowQuery(expectedResultSet, result);
             else return verifyGeneralQuery(expectedResultSet, result);
         } catch (Exception e) {
-            log.error("验证查询结果集和预期结果集等价性异常, e:", e);
+            log.error("Verify: RESULT SET &  EXPECTED RESULT are the same., e:", e);
             return false;
         }
     }
@@ -221,27 +223,29 @@ public class InfluxDBTSAFOracle
                         .getBigDecimalValue().longValue();
 
                 if (!expectedResultSet.containsKey(timestamp)) {
-                    log.error("预期结果集中不包含实际结果集时间戳, timestamp:{}", timestamp);
+                    log.error("Expected result NOT contain the ACTUAL result timestamp, timestamp:{}", timestamp);
                     return VerifyResultState.FAIL;
                 }
                 InfluxDBConstant isEquals = dataConstant.isEquals(
                         new InfluxDBConstant.InfluxDBBigDecimalConstant(expectedResultSet.get(timestamp).get(i)));
                 if (isEquals.isNull()) throw new AssertionError();
                 else if (!isEquals.asBooleanNotNull()) {
-                    log.error("预期结果集和实际结果集具体时间戳下数据异常, timestamp:{}, expectedValue:{}, actualValue:{}",
+                    log.error("Data anomalies at specific timestamps, timestamp:{}, expectedValue:{}, actualValue:{}",
                             timestamp, expectedResultSet.get(timestamp), dataConstant.getBigDecimalValue());
                     return VerifyResultState.FAIL;
                 }
             }
             // 数目
             if (expectedResultSet.size() != currentValue.getValues().size() - nullValueCount) {
-                log.error("预期结果集和实际结果集数目不一致, expectedResultSetSize:{} rowCount:{} nullValueCount:{}",
+                log.error("EXPECTED result and the ACTUAL result were different., expectedResultSetSize:{} rowCount:{} nullValueCount:{}",
                         expectedResultSet.size(), currentValue.getValues().size(), nullValueCount);
                 return VerifyResultState.FAIL;
             }
         }
         return VerifyResultState.SUCCESS;
     }
+
+    protected abstract boolean containsRows(TimeSeriesConstraint constraint);
 
     private enum VerifyResultState {
         SUCCESS, FAIL, IS_NULL
@@ -308,12 +312,27 @@ public class InfluxDBTSAFOracle
                 // generate time column
                 InfluxDBColumn timeColumn = new InfluxDBColumn(InfluxDBValueStateConstant.TIME_FIELD.getValue(),
                         false, InfluxDBDataType.INT);
-                InfluxDBTimeExpressionGenerator timeExpressionGenerator = new InfluxDBTimeExpressionGenerator(globalState);
-                InfluxDBExpression timeExpression = timeExpressionGenerator.setColumns(
-                        Collections.singletonList(timeColumn)).generateExpression();
 
-                result = new InfluxDBBinaryLogicalOperation(rectifiedPredicateExpression, timeExpression,
-                        InfluxDBBinaryLogicalOperation.InfluxDBBinaryLogicalOperator.AND);
+//                InfluxDBTimeExpressionGenerator timeExpressionGenerator = new InfluxDBTimeExpressionGenerator(globalState);
+//                InfluxDBExpression timeExpression = timeExpressionGenerator.setColumns(
+//                        Collections.singletonList(timeColumn)).generateExpression();
+//
+//                result = new InfluxDBBinaryLogicalOperation(rectifiedPredicateExpression, timeExpression,
+//                        InfluxDBBinaryLogicalOperation.InfluxDBBinaryLogicalOperator.AND);
+
+                //fix the time expression generator
+                InfluxDBTimeExpressionGenerator timeExpressionGenerator = new InfluxDBTimeExpressionGenerator(globalState);
+                InfluxDBExpression timeExpression = timeExpressionGenerator.setColumns(Collections.singletonList(timeColumn)).generateExpression();
+
+                if (timeExpression.getExpectedValue().isBoolean()){
+                    result = new InfluxDBBinaryLogicalOperation(
+                            rectifiedPredicateExpression,
+                            timeExpression,
+                            InfluxDBBinaryLogicalOperation.InfluxDBBinaryLogicalOperator.AND);
+                } else {
+                    result = rectifiedPredicateExpression;
+                }
+
                 String expressionStr = InfluxDBVisitor.asString(result);
                 log.info("Expression: {}", expressionStr);
 
@@ -327,7 +346,7 @@ public class InfluxDBTSAFOracle
                                 globalState.getOptions().getMaxExpressionDepth());
                         regenerateCounter = 0;
                     }
-                    throw new ReGenerateExpressionException(String.format("该语法节点序列需重新生成:%s", predicateSequence));
+                    throw new ReGenerateExpressionException(String.format("The syntax node sequence needs to be regenerated: %s", predicateSequence));
                 }
                 // 更新概率表
                 InfluxDBQuerySynthesisFeedbackManager.addSequenceRegenerateProbability(predicateSequence);

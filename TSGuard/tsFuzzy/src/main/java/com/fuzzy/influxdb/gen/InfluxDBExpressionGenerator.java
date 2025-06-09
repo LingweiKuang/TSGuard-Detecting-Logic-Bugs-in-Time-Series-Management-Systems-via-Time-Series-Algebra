@@ -199,6 +199,9 @@ public class InfluxDBExpressionGenerator extends UntypedExpressionGenerator<Infl
                 double val = BigDecimal.valueOf(state.getRandomly().getInfiniteDouble()).setScale(
                         InfluxDBDoubleConstant.scale, RoundingMode.HALF_UP).doubleValue();
                 return InfluxDBConstant.createDoubleConstant(val);
+            case TIMESTAMP:
+                return InfluxDBConstant.createIntConstant(System.currentTimeMillis(), /*asBoolean*/false);
+
             default:
                 throw new AssertionError();
         }

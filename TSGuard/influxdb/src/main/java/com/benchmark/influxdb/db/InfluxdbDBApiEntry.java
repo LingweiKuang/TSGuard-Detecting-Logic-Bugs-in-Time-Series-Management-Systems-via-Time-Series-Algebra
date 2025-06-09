@@ -9,11 +9,12 @@ import com.benchmark.dto.DBValParam;
 import com.benchmark.entity.AggCountResult;
 import com.benchmark.entity.DBVal;
 import com.benchmark.entity.PerformanceEntity;
+import com.benchmark.influxdb.hint.ExpectedResultGenerator;
+import com.benchmark.influxdb.hint.ResultComparator;
 import com.benchmark.influxdb.influxdbUtil.ParseData;
-import com.influxdb.client.InfluxDBClient;
-import com.influxdb.client.InfluxDBClientFactory;
-import com.influxdb.client.InfluxDBClientOptions;
-import com.influxdb.client.QueryApi;
+import com.influxdb.client.*;
+import com.influxdb.client.domain.Bucket;
+import com.influxdb.client.domain.BucketRetentionRules;
 import com.influxdb.client.domain.WritePrecision;
 import com.influxdb.query.FluxTable;
 import lombok.Data;
@@ -33,6 +34,9 @@ import java.net.URLEncoder;
 import java.text.ParseException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import com.benchmark.influxdb.hint.FluxHintInjector;
 
 @Slf4j
 @Data
@@ -55,6 +59,7 @@ public class InfluxdbDBApiEntry implements ApiEntry {
     private int slowQueryTimeThrehold = 20000; //单位毫秒
     private boolean trimTagValue = true;
     private int splitSizeRealTime = 200;       // 分片大小
+    private String hint = "";
 
     /**
      * 初始化DBApiEntry。
@@ -100,6 +105,50 @@ public class InfluxdbDBApiEntry implements ApiEntry {
         log.info(String.format("close InfluxdbDBApiEntry host:%s port:%d org:%s bucket:%s", host, port,
                 orgId, bucket));
     }
+
+    public void setHint(String hint) {
+        this.hint = hint == null ? "" : hint.trim();
+    }
+
+    private List<FluxTable> runFluxWithHint(String baseFlux, String hint) {
+        String fluxWithHint = FluxHintInjector.applyHint(baseFlux, hint);
+        return influxDBClient.getQueryApi().query(fluxWithHint);
+    }
+
+    //for testing only
+    public boolean createBucket(String name, long retentionPeriodMs) {
+        try {
+            BucketRetentionRules rule = new BucketRetentionRules();
+            // API takes seconds
+            int everySeconds = Math.max(1, (int)(retentionPeriodMs / 1000));
+            rule.setEverySeconds(everySeconds);
+
+            BucketsApi bucketsApi       = influxDBClient.getBucketsApi();
+            // find your org by ID
+            Bucket bucket = bucketsApi.createBucket(name, rule, this.orgId);
+            return bucket != null;
+        } catch (Exception e) {
+            log.warn("createBucket failed", e);
+            return false;
+        }
+    }
+
+    public boolean deleteBucket(String name) {
+        try {
+            BucketsApi bucketsApi = influxDBClient.getBucketsApi();
+            Bucket bucket = bucketsApi.findBucketByName(name);
+            if (bucket == null) {
+                return true;
+            }
+            bucketsApi.deleteBucket(bucket);
+            return true;
+        } catch (Exception e) {
+            log.warn("deleteBucket failed", e);
+            return false;
+        }
+    }
+
+
 
     @Override
     public boolean isConnected() {
@@ -335,8 +384,10 @@ public class InfluxdbDBApiEntry implements ApiEntry {
                 this.bucket, beginDate / 1000, endDate / 1000, dbValParam.getTableName(), dbValParam.getTagName(),
                 dbValParam.getTagValue());
 
-        QueryApi queryApi = influxDBClient.getQueryApi();
-        List<FluxTable> tables = queryApi.query(fluxQuery);
+        //QueryApi queryApi = influxDBClient.getQueryApi();
+        //List<FluxTable> tables = queryApi.query(fluxQuery);
+        List<FluxTable> tables = runFluxWithHint(fluxQuery, this.hint);
+
         Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,
                 dbValParam.getTagName());
         stc.end();
@@ -410,7 +461,7 @@ public class InfluxdbDBApiEntry implements ApiEntry {
             return results;
         }
         if (beginDate > endDate) {
-            log.info(String.format("查询时间范围为空!"));
+            log.info(String.format("The query time range is empty!"));
             return results;
         } else if (beginDate == endDate) endDate += 1000;        // 左闭右开 + 1s，查询粒度为s
 
@@ -435,9 +486,30 @@ public class InfluxdbDBApiEntry implements ApiEntry {
         }
 
         QueryApi queryApi = influxDBClient.getQueryApi();
-        List<FluxTable> tables = queryApi.query(fluxQuery);
-        Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,
-                tagName);
+        List<FluxTable> rawTables = queryApi.query(fluxQuery);
+        List<DBVal> baseline = ParseData
+                .parseFluxTableToDBVal(rawTables, tagName)
+                .values().stream()
+                .flatMap(m -> m.values().stream())
+                .collect(Collectors.toList());
+
+        List<FluxTable> tables = runFluxWithHint(fluxQuery, this.hint);
+
+        Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,tagName);
+        List<DBVal> actual = ParseData
+                .parseFluxTableToDBVal(tables, tagName)
+                .values().stream()
+                .flatMap(m -> m.values().stream())
+                .collect(Collectors.toList());
+
+        //expected result to compare with actual
+        List<DBVal> expected = ExpectedResultGenerator.apply(baseline, this.hint);
+        List<String> mismatches = ResultComparator.compare(expected, actual);
+        if (!mismatches.isEmpty()) {
+            log.error("Hint `{}` produced unexpected results:", this.hint);
+            mismatches.forEach(msg -> log.error("  • " + msg));
+        }
+
         stc.end();
         log.info(String.format("queryLast tableName:%s tagName:%s beginDate:%s endDate:%s " +
                         "spendTime:%d(ms)",
@@ -630,7 +702,7 @@ public class InfluxdbDBApiEntry implements ApiEntry {
         List<DBVal> results = new ArrayList<>();
 
         if (start > end) {
-            log.info(String.format("查询时间范围为空!"));
+            log.info(String.format("The query time range is empty!"));
             return results;
         } else if (start == end) end += 1;        // 左闭右开
 
@@ -653,8 +725,10 @@ public class InfluxdbDBApiEntry implements ApiEntry {
                     this.bucket, start, end, dbValParam.getTableName(), dbValParam.getTagName(), tagValue);
         }
 
-        QueryApi queryApi = influxDBClient.getQueryApi();
-        List<FluxTable> tables = queryApi.query(fluxQuery);
+        //QueryApi queryApi = influxDBClient.getQueryApi();
+        //List<FluxTable> tables = queryApi.query(fluxQuery);
+        List<FluxTable> tables = runFluxWithHint(fluxQuery, this.hint);
+
         Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,
                 dbValParam.getTagName());
         stc.end();
@@ -782,9 +856,11 @@ public class InfluxdbDBApiEntry implements ApiEntry {
                     tagValue, (endDate - beginDate) / 1000, "s", offset, aggMethod);
 
 
-            QueryApi queryApi = influxDBClient.getQueryApi();
+            //QueryApi queryApi = influxDBClient.getQueryApi();
             log.info(fluxQuery);
-            List<FluxTable> tables = queryApi.query(fluxQuery);
+            //List<FluxTable> tables = queryApi.query(fluxQuery);
+            List<FluxTable> tables = runFluxWithHint(fluxQuery, this.hint);
+
             log.info(fluxQuery);
             Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,
                     dbValParam.getTagName());
@@ -846,8 +922,10 @@ public class InfluxdbDBApiEntry implements ApiEntry {
                     tagValue, timeGranularity / 1000, "s", offset, AggFunction.valueOf(aggFunctionType.getFunc()).getFunc());
 
 
-            QueryApi queryApi = influxDBClient.getQueryApi();
-            List<FluxTable> tables = queryApi.query(fluxQuery);
+            //QueryApi queryApi = influxDBClient.getQueryApi();
+            //List<FluxTable> tables = queryApi.query(fluxQuery);
+            List<FluxTable> tables = runFluxWithHint(fluxQuery, this.hint);
+
             Hashtable<String, SortedMap<Long, DBVal>> dbValHashtable = ParseData.parseFluxTableToDBVal(tables,
                     dbValParam.getTagName());
 

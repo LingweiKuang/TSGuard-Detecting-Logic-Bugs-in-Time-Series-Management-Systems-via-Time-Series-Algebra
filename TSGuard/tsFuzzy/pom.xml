@@ -124,6 +124,11 @@
             <artifactId>commons-cli</artifactId>
             <version>1.4</version>
         </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <!--maven-shade-plugin插件能够将外部Jar包一并打包至指定模块Jar包内, 运行主类时不会存在找不到外部类错误-->

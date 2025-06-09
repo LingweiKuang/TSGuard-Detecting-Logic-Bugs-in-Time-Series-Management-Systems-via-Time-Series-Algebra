@@ -193,15 +193,15 @@ public class InfluxDBProvider extends SQLProviderAdapter<InfluxDBGlobalState, In
     @Override
     protected void recordQueryExecutionStatistical(InfluxDBGlobalState globalState) {
         // record expression depth
-        globalState.getLogger().writeSyntaxErrorQuery(String.format("表达式迭代深度:%d",
+        globalState.getLogger().writeSyntaxErrorQuery(String.format("Expression Iteration Depth:%d",
                 InfluxDBQuerySynthesisFeedbackManager.expressionDepth.get()));
 
         // query execution statistical
-        globalState.getLogger().writeSyntaxErrorQuery(String.format("查询统计信息:%s",
+        globalState.getLogger().writeSyntaxErrorQuery(String.format("Query statistics:%s",
                 InfluxDBQuerySynthesisFeedbackManager.queryExecutionStatistical));
 
         // query syntax sequence number
-        globalState.getLogger().writeSyntaxErrorQuery(String.format("查询语法序列数目:%s",
+        globalState.getLogger().writeSyntaxErrorQuery(String.format("Number of query syntax sequences:%s",
                 InfluxDBQuerySynthesisFeedbackManager.querySynthesisFeedback.getSequenceNumber()));
 
         // query syntax sequence

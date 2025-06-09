@@ -33,7 +33,7 @@ public class EquationsManager {
         if (TimeSeriesName.endsWith(GlobalConstant.BASE_TIME_SERIES_NAME)) return baseAndBaseEquations;
 
         if (!this.equationsMap.containsKey(genHashKey(databaseName, tableName, TimeSeriesName))) {
-            log.error("{} 列不存在", TimeSeriesName);
+            log.error("{} --Column does not exist--", TimeSeriesName);
             throw new AssertionError();
         }
         return this.equationsMap.get(genHashKey(databaseName, tableName, TimeSeriesName));

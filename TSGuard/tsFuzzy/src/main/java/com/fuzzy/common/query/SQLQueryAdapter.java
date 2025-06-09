@@ -94,7 +94,7 @@ public class SQLQueryAdapter extends Query<SQLConnection> {
         } catch (Exception e) {
             Main.nrUnsuccessfulActions.addAndGet(1);
             String expectedException = checkException(e);
-            globalState.getLogger().writeSyntaxErrorQuery(String.format("预期SQL错误: query:%s expectedException: %s",
+            globalState.getLogger().writeSyntaxErrorQuery(String.format("Expected SQL error: query:%s expectedException: %s",
                     query, expectedException));
             return false;
         } finally {
@@ -144,7 +144,7 @@ public class SQLQueryAdapter extends Query<SQLConnection> {
             s.close();
             Main.nrUnsuccessfulActions.addAndGet(1);
             String expectedException = checkException(e);
-            globalState.getLogger().writeSyntaxErrorQuery(String.format("预期SQL错误: %s", expectedException));
+            globalState.getLogger().writeSyntaxErrorQuery(String.format("Expected SQL error: %s", expectedException));
         }
         return null;
     }

@@ -36,7 +36,7 @@ public abstract class TimeSeriesAlgebraFrameworkBase<S extends GlobalState<?, ?,
     }
 
     @Override
-    public final void check() throws Exception {
+    public void check() throws Exception {
         Query<C> timeseriesQuery = getTimeSeriesQuery();
         if (globalState.getOptions().logEachSelect()) {
             globalState.getLogger().writeCurrent(timeseriesQuery.getQueryString());
@@ -48,7 +48,7 @@ public abstract class TimeSeriesAlgebraFrameworkBase<S extends GlobalState<?, ?,
         } else {
             // statistical
             incrementQueryExecutionCounter(QueryExecutionStatistical.QueryExecutionType.success);
-            log.info("有效查询: {}", timeseriesQuery.getQueryString());
+            log.info("Valid query: {}", timeseriesQuery.getQueryString());
         }
     }
 
@@ -56,7 +56,7 @@ public abstract class TimeSeriesAlgebraFrameworkBase<S extends GlobalState<?, ?,
         // 验证预期结果集和实际结果集等价性
         try (DBValResultSet result = query.executeAndGet(globalState)) {
             if (result == null) {
-                globalState.getLogger().writeSyntaxErrorQuery(String.format("无效查询: %s;",
+                globalState.getLogger().writeSyntaxErrorQuery(String.format("Invalid query: %s;",
                         query.getQueryString()));
                 // 将无效查询序列重生成概率设为10
                 setSequenceRegenerateProbabilityToMax(predicateSequence);
@@ -100,7 +100,7 @@ public abstract class TimeSeriesAlgebraFrameworkBase<S extends GlobalState<?, ?,
                 if (pivotRow.contains(predicateSequence)) {
                     // 探索空间：表达式递归深度逐级递增
                     // => 从小序列搜集到大序列, 但凡存在包含关系的pivotRowAbstractPredicates均忽略重复报错
-                    System.out.println("序列报错重复");
+                    System.out.println("Sequence error repeat");
                 }
             });
             sb.append("--\n-- time predicates abstract expression:\n")

@@ -17,4 +17,8 @@ public class InfluxDBGlobalState extends SQLGlobalState<InfluxDBOptions, InfluxD
     public boolean usesTSAF() {
         return getDbmsSpecificOptions().oracles.stream().anyMatch(o -> o == InfluxDBOptions.InfluxDBOracleFactory.TSAF);
     }
+
+    public boolean usesHINT(){
+        return getDbmsSpecificOptions().oracles.stream().anyMatch((o -> o == InfluxDBOptions.InfluxDBOracleFactory.HINT));
+    }
 }
